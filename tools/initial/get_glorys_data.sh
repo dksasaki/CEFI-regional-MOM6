@@ -37,12 +37,12 @@ if [ -z "$username" ] || [ -z "$password" ]; then
 fi
 
 # Log in to copernicus Marine
-command_string="copernicus-marine login --username $username --password $password"
+command_string="copernicusmarine login --username $username --password $password --skip-if-user-logged-in"
 eval "$command_string"
 
 # Product and dataset IDs
 serviceId="GLOBAL_MULTIYEAR_PHY_001_030-TDS"
-productId="cmems_mod_glo_phy_my_0.083_P1D-m"
+productId="cmems_mod_glo_phy_my_0.083deg_P1D-m"
 
 # Variables
 variable=("so" "thetao" "uo" "vo" "zos")
@@ -57,7 +57,7 @@ while [[ "$startDate" != "$endDate" ]]; do
 
     echo "=============== Date: $startDate ===================="
 
-    command="copernicus-marine subset -i $productId \
+    command="copernicusmarine subset -i $productId \
     -v ${variable[0]} -v ${variable[1]} -v ${variable[2]} -v ${variable[3]} -v ${variable[4]} \
     -x ${lon[0]} -X ${lon[1]} -y ${lat[0]} -Y ${lat[1]} \
     -t \"$startDate\" -T \"$startDate\" \
