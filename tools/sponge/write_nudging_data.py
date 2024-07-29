@@ -7,14 +7,30 @@ How to use
 import numpy as np
 import os
 import pandas as pd
-import xarray
+import xarray as xr
 import xesmf
 
 
-VARIABLES = ['thetao', 'so']
+
+# VARIABLES = ['thetao', 'so']
+
+VARIABLES = {
+    'tracer': {'varbs': ['so', 'thetao'], # tracer (yh,xh)
+               'grid':  {'geolat': 'lat', 'geolon': 'lon'},
+               'lon': 'xh',
+               'lat': 'yh'}, 
+    'uo'    : {'varbs': ['uo'], # u      (yh,xq)
+               'grid': {'geolat_u': 'lat', 'geolon_u': 'lon'},
+               'lon': 'xq',
+               'lat': 'yh'},
+    'vo'    : {'varbs': ['vo'], # v      (yq,xh)
+               'grid': {'geolat_v': 'lat', 'geolon_v': 'lon'},
+               'lon': 'xh',
+               'lat': 'yq'},
+}
 
 
-def add_bounds(ds):
+def add_bounds(ds, lonstr, latstr):
     # Add data points at end of month, since time_bnds aren't used
     # All points extend to 23:59:59 at end of month, except
     # for the end of the year which is padded to 00:00:00 the next Jan 1.
@@ -25,9 +41,9 @@ def add_bounds(ds):
     starts['time'] = mstart
     ends = ds.copy()
     ends['time'] = mend
-    bounded = xarray.concat((starts, ends), dim='time').sortby('time')
+    bounded = xr.concat((starts, ends), dim='time').sortby('time')
     # Ensure that order is correct so that time can be unlimited dim
-    bounded = bounded.transpose('time', 'depth', 'yh', 'xh')
+    bounded = bounded.transpose('time', 'depth', latstr, lonstr)
     return bounded
 
 
@@ -52,59 +68,81 @@ if __name__ == '__main__':
     import argparse
     from pathlib import Path
     from yaml import safe_load
+
     parser = argparse.ArgumentParser()
     parser.add_argument('-c', '--config')
     args = parser.parse_args()
+    
     with open(args.config, 'r') as file: 
         config = safe_load(file)
-    static = xarray.open_dataset(config['filesystem']['ocean_static'])
-    target_grid = static[['geolat', 'geolon']].rename({'geolat': 'lat', 'geolon': 'lon'})
     nudging_data = config['filesystem']['monthly_data_nudging']
-    regridder = None
+    # regridder = None  ## TODO: think how to save regrid file when using more than one gtype
     model_input = Path(config['filesystem']['model_input_data']) / 'nudging'
     model_input.mkdir(exist_ok=True)
+    
     for year in range(config['forecasts']['first_year'], config['forecasts']['last_year']+1):
         print(f'{year}')
         glorys = (
-            xarray.open_dataset(nudging_data.format(year=year))
+            xr.open_dataset(nudging_data.format(year=year))
             .rename({'latitude': 'lat', 'longitude': 'lon'})
-            [VARIABLES]
         )
         print('  Filling')
         filled = glorys.ffill('depth', limit=None)
         filled = filled.compute()
-        if regridder is None:
+
+        static = xr.open_dataset(config['filesystem']['ocean_static'])
+
+        dataset_list = []
+        for v in VARIABLES:
+
+            print(f'  Working on {v}')
+            gtype = VARIABLES[v]['grid']   # determine if this is a tracer, or velocity grid
+            varbs = VARIABLES[v]['varbs']  # select variables associated with gtype
+            lonstr = VARIABLES[v]['lon']   # longitude string
+            latstr = VARIABLES[v]['lat']   # latitude string
+            
+            target_grid = static[gtype.keys()].rename(gtype)
+
+            # if regridder is None:
             print('  Setting up regridder')
             regridder = reuse_regrid(
-                glorys, target_grid, 
+                glorys[varbs], target_grid, 
                 filename=Path(os.environ['TMPDIR']) / 'regrid_nudging.nc', 
                 method='nearest_s2d', 
-                reuse_weights=True,
+                reuse_weights=False,
                 periodic=False
             )
-        print('  Interpolating')
-        interped = (
-            regridder(filled)
-            .drop(['lon', 'lat'], errors='ignore')
-            .compute()
-        ) 
-        print('  Setting time bounds and coordinates')
-        bounded = add_bounds(interped)
-        # Add coordinate information
-        bounded['xh'] = (('xh', ), target_grid.xh.data)
-        bounded['yh'] = (('yh', ), target_grid.yh.data)
-        all_vars = list(bounded.data_vars.keys()) + list(bounded.coords.keys())
-        encodings = {v: {'_FillValue': None} for v in all_vars}
-        encodings['time'].update({'dtype':'float64', 'calendar': 'gregorian', 'units': 'days since 1993-01-01'})
-        bounded['depth'].attrs = {
-            'cartesian_axis': 'Z',
-            'positive': 'down'
-        }
-        bounded['time'].attrs['cartesian_axis'] = 'T'
-        bounded['xh'].attrs = {'cartesian_axis': 'X'}
-        bounded['yh'].attrs = {'cartesian_axis': 'Y'}
+
+            print('  Interpolating')
+
+            interped = (
+                regridder(filled[varbs])
+                .drop(['lon', 'lat'], errors='ignore')
+                .compute()
+            ) 
+            print('  Setting time bounds and coordinates')
+
+
+            bounded = add_bounds(interped, lonstr, latstr)
+            # Add coordinate information
+            bounded[lonstr] = ((lonstr, ), target_grid[lonstr].data)
+            bounded[latstr] = ((latstr, ), target_grid[latstr].data)
+            all_vars = list(bounded.data_vars.keys()) + list(bounded.coords.keys())
+            encodings = {v: {'_FillValue': None} for v in all_vars}
+            encodings['time'].update({'dtype':'float64', 'calendar': 'gregorian', 'units': 'days since 1993-01-01'})
+            bounded['depth'].attrs = {
+                'cartesian_axis': 'Z',
+                'positive': 'down'
+            }
+            bounded['time'].attrs['cartesian_axis'] = 'T'
+            bounded[lonstr].attrs = {'cartesian_axis': 'X'}
+            bounded[latstr].attrs = {'cartesian_axis': 'Y'}
+            bounded.compute()
+            dataset_list.append(bounded.copy())
+            del(bounded)
         print('  Writing')
-        bounded.to_netcdf(
+        dsout = xr.merge(dataset_list)
+        dsout.to_netcdf(
             model_input / f'nudging_monthly_{year}.nc',
             format='NETCDF3_64BIT',
             engine='netcdf4',
