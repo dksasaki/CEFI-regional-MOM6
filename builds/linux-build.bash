@@ -102,6 +102,56 @@ fi
 
     make $makeflags MOM6SIS2
 
+elif [[ $flavor == "mom6sis2_yaml" ]]; then
+
+    echo "build mom6sis2 with FMS2 cap and yaml"
+
+[[ -d build/$machine_name-$platform/libyaml/$target ]] && rm -rf build/$machine_name-$platform/libyaml/$target
+mkdir -p build/$machine_name-$platform/libyaml/$target
+pushd $srcdir/libyaml
+$srcdir/libyaml/bootstrap
+$srcdir/libyaml/configure --prefix=$abs_rootdir/build/$machine_name-$platform/libyaml/$target 
+make 
+make install
+
+if [ $? -ne 0 ]; then
+   echo "Could not build the libyaml library!"
+   exit 1
+fi
+popd
+
+mkdir -p build/$machine_name-$platform/shared/$target
+pushd build/$machine_name-$platform/shared/$target
+rm -f path_names
+$srcdir/mkmf/bin/list_paths $srcdir/FMS/{affinity,amip_interp,column_diagnostics,diag_integral,drifters,horiz_interp,memutils,sat_vapor_pres,topography,astronomy,constants,diag_manager,field_manager,include,monin_obukhov,platform,tracer_manager,axis_utils,coupler,fms,fms2_io,interpolator,mosaic,mosaic2,random_numbers,time_interp,tridiagonal,block_control,data_override,exchange,mpp,time_manager,string_utils,parser}/ $srcdir/FMS/libFMS.F90
+$srcdir/mkmf/bin/mkmf -t $abs_rootdir/$machine_name/$platform.mk -o "-I../../libyaml/$target/include" -p libfms.a -l "-L../../libyaml/$target/lib -lyaml $linker_options" -c "-Duse_libMPI -Duse_yaml -Duse_netCDF -DMAXFIELDMETHODS_=800" path_names
+
+make $makeflags libfms.a
+
+if [ $? -ne 0 ]; then
+   echo "Could not build the FMS library!"
+   exit 1
+fi
+
+popd
+
+    mkdir -p build/$machine_name-$platform/ocean_ice/$target
+    pushd build/$machine_name-$platform/ocean_ice/$target
+    rm -f path_names
+    $srcdir/mkmf/bin/list_paths $srcdir/MOM6/{config_src/infra/FMS2,config_src/memory/dynamic_symmetric,config_src/drivers/FMS_cap,config_src/external/ODA_hooks,config_src/external/database_comms,config_src/external/drifters,config_src/external/stochastic_physics,pkg/GSW-Fortran/{modules,toolbox}/,src/{*,*/*}/} $srcdir/SIS2/{config_src/dynamic_symmetric,config_src/external/Icepack_interfaces,src} $srcdir/icebergs/src $srcdir/FMS/{coupler,include}/ $srcdir/{ocean_BGC/generic_tracers,ocean_BGC/mocsy/src}/ $srcdir/{atmos_null,ice_param,land_null,coupler/shared/,coupler/full/}/
+
+
+compiler_options='-DINTERNAL_FILE_NML -DUSE_FMS2_IO -Duse_yaml -DMAX_FIELDS_=600 -DNOT_SET_AFFINITY -D_USE_MOM6_DIAG -D_USE_GENERIC_TRACER -DUSE_PRECISION=2 -D_USE_LEGACY_LAND_ -Duse_AM3_physics'
+linker_options=''
+if [[ "$target" =~ "stdpar" ]] ; then
+    compiler_options="$compiler_options -stdpar -Minfo=accel"
+    linker_options="$linker_options -stdpar "
+fi
+
+    $srcdir/mkmf/bin/mkmf -t $abs_rootdir/$machine_name/$platform.mk -o "-I../../shared/$target -I../../libyaml/$target/include" -p MOM6SIS2 -l "-L../../shared/$target -lfms -L../../libyaml/$target/lib -lyaml $linker_options" -c "$compiler_options" path_names
+
+    make $makeflags MOM6SIS2
+
 elif [[ $flavor == "fms1_mom6sis2" ]]; then
 
     echo "build mom6sis2 with FMS1 cap" 
@@ -127,7 +177,7 @@ popd
     $srcdir/mkmf/bin/list_paths $srcdir/MOM6/{config_src/infra/FMS1,config_src/memory/dynamic_symmetric,config_src/drivers/FMS_cap,config_src/external/ODA_hooks,config_src/external/database_comms,config_src/external/drifters,config_src/external/stochastic_physics,pkg/GSW-Fortran/{modules,toolbox}/,src/{*,*/*}/} $srcdir/SIS2/{config_src/dynamic_symmetric,config_src/external/Icepack_interfaces,src} $srcdir/icebergs/src $srcdir/FMS/{coupler,include}/ $srcdir/{ocean_BGC/generic_tracers,ocean_BGC/mocsy/src}/ $srcdir/{atmos_null,ice_param,land_null,coupler/shared/,coupler/full/}/
 
 
-compiler_options='-DINTERNAL_FILE_NML -DMAX_FIELDS_=600 -DNOT_SET_AFFINITY -D_USE_MOM6_DIAG -D_USE_GENERIC_TRACER -DUSE_PRECISION=2 -D_USE_LEGACY_LAND_ -Duse_AM3_physics'
+compiler_options='-DINTERNAL_FILE_NML -DMAX_FIELDS_=600 -DNOT_SET_AFFINITY -Duse_deprecated_io -D_USE_MOM6_DIAG -D_USE_GENERIC_TRACER -DUSE_PRECISION=2 -D_USE_LEGACY_LAND_ -Duse_AM3_physics'
 linker_options=''
 if [[ "$target" =~ "stdpar" ]] ; then
     compiler_options="$compiler_options -stdpar -Minfo=accel"
@@ -142,7 +192,7 @@ else
     mkdir -p build/$machine_name-$platform/ocean_only/$target
     pushd build/$machine_name-$platform/ocean_only/$target
     rm -f path_names
-    $srcdir/mkmf/bin/list_paths $srcdir/MOM6/{config_src/infra/FMS2,config_src/memory/dynamic_symmetric,config_src/drivers/solo_driver,config_src/external/GFDL_ocean_BGC,config_src/external/ODA_hooks,pkg/GSW-Fortran/{modules,toolbox}/,src/{*,*/*}}/
+    $srcdir/mkmf/bin/list_paths $srcdir/MOM6/{config_src/infra/FMS2,config_src/memory/dynamic_symmetric,config_src/drivers/solo_driver,config_src/external/GFDL_ocean_BGC,config_src/external/ODA_hooks,config_src/external/database_comms,config_src/external/drifters,config_src/external/stochastic_physics,pkg/GSW-Fortran/{modules,toolbox}/,src/{*,*/*}}/
     $srcdir/mkmf/bin/mkmf -t $abs_rootdir/$machine_name/$platform.mk -o "-I../../shared/$target" -p MOM6 -l "-L../../shared/$target -lfms" -c '-Duse_netCDF -DSPMD' path_names
 
     make $makeflags MOM6
