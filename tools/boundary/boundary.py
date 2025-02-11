@@ -14,19 +14,31 @@ def check_angle_range(angle):
     if amax > (2 * np.pi) or amin < (-2 * np.pi):
         raise ValueError(f'Grid angle ranges from [{amin}, {amax}]. Expected from [-2pi, 2pi]. Are the units correct?')
 
-def rotate_uv(u, v, angle):
+
+def rotate_uv(uearth, vearth, angle_earth_to_model_rad):
     """Rotate velocities from earth-relative to model-relative.
+    Inputs should be velocity component in true east direction (uearth)
+    and true north direction (vearth), and the angle in radians in the standard
+    (counterclockwise) direction from the true east/north
+    direction to the model east/north direction.
+    For example, if the model east was aligned with the 
+    true northeast, the angle would be +pi/4 (45 deg). 
+    This function does a counterclockwise rotation of the 
+    coordinates, which is equivalent to a clockwise
+    rotation of the vector.
+    See https://mathworld.wolfram.com/RotationMatrix.html for a refresher
+    on how this works.
 
     Args:
-        u: west-east component of velocity.
-        v: south-north component of velocity.
-        angle: angle of rotation from true north to model north.
+        uearth: west-east component of velocity.
+        vearth: south-north component of velocity.
+        angle_earth_to_model_rad: angle of rotation from true north to model north [radians].
 
     Returns:
         Model-relative west-east and south-north components of velocity.
     """
-    urot = np.cos(angle) * u + np.sin(angle) * v
-    vrot = -np.sin(angle) * u + np.cos(angle) * v
+    urot = np.cos(angle_earth_to_model_rad) * uearth + np.sin(angle_earth_to_model_rad) * vearth
+    vrot = -np.sin(angle_earth_to_model_rad) * uearth + np.cos(angle_earth_to_model_rad) * vearth
     return urot, vrot
 
 
@@ -484,7 +496,8 @@ class Segment():
     def regrid_velocity(
                 self, usource, vsource, 
                 method='nearest_s2d', periodic=False, write=True, 
-                flood=False, fill='b', xdim='lon', ydim='lat', zdim='z', rotate=True, **kwargs):
+                flood=False, fill='b', xdim='lon', ydim='lat', zdim='z', rotate=True, 
+                time_attrs=None, time_encoding=None, **kwargs):
         """Interpolate velocity onto segment and (optionally) write to file.
 
         Args:
@@ -595,6 +608,12 @@ class Segment():
 
         ds_uv = self.rename_dims(ds_uv)
 
+        # Restore time attributes and encoding
+        if time_attrs:
+            ds_uv['time'].attrs = time_attrs
+        if time_encoding:
+            ds_uv['time'].encoding = time_encoding
+
         if write:
             self.to_netcdf(ds_uv, 'uv', **kwargs)
         
@@ -604,7 +623,8 @@ class Segment():
             self, tsource, 
             method='nearest_s2d', periodic=False, write=True, 
             flood=False, fill='b', xdim='lon', ydim='lat', zdim='z',
-            regrid_suffix='t', source_var=None, **kwargs):
+            regrid_suffix='t', source_var=None, 
+            time_attrs=None, time_encoding=None, **kwargs):
         """Regrid a tracer onto segment and (optionally) write to file.
 
         Args:
@@ -673,6 +693,12 @@ class Segment():
         
         tdest = self.rename_dims(tdest)
         tdest = tdest.rename({name: f'{name}_{self.segstr}'})
+
+        # Restore time attributes and encoding
+        if time_attrs:
+            tdest['time'].attrs = time_attrs
+        if time_encoding:
+            tdest['time'].encoding = time_encoding
         
         if write:
             self.to_netcdf(tdest, name, **kwargs)
