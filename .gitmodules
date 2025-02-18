@@ -40,8 +40,9 @@
 	branch = 2025.01
 [submodule "src/ocean_BGC"]
 	path = src/ocean_BGC
-	url = https://github.com/NOAA-CEFI-Regional-Ocean-Modeling/ocean_BGC.git
-	branch = dev/cefi
+	# url = https://github.com/NOAA-CEFI-Regional-Ocean-Modeling/ocean_BGC.git
+	url = https://github.com/dksasaki/ocean_BGC
+	branch = dev/dev/detrital_inclusion
 [submodule "src/MOM6"]
 	path = src/MOM6
 	url = https://github.com/NOAA-CEFI-Regional-Ocean-Modeling/MOM6.git
